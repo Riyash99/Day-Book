@@ -18,6 +18,10 @@
    Firebase config for project day-book-cb0f3 (already filled in).
    (Firebase console > Project settings > Your apps > SDK setup > Config)
    ===================================================================== */
+/* Built-in login name. You only type the password.
+   It must match the user you add in Firebase > Authentication > Users. */
+const LOGIN_EMAIL = "owner@day-book-cb0f3.app";
+
 const firebaseConfig = {
   apiKey: "AIzaSyATEPKhEMzDkTgbfXvA53zDYaNIKEVfLp8",
   authDomain: "day-book-cb0f3.firebaseapp.com",
@@ -51,7 +55,12 @@ button{cursor:pointer}
 #signin{min-height:100vh;display:grid;place-items:center;padding:24px;text-align:center}
 #signin h1{font-size:2.6rem;font-weight:800;letter-spacing:-.02em}
 #signin p{color:var(--muted);max-width:32ch;margin:8px auto 22px}
-#signinMsg{color:var(--red);font-size:.9rem;margin-top:12px;max-width:40ch}
+#signinMsg{color:var(--red);font-size:.9rem;margin-top:12px;max-width:40ch;margin-inline:auto}
+#signinMsg.ok{color:var(--leaf)}
+.login{display:flex;flex-direction:column;gap:10px;width:min(320px,86vw);margin:0 auto}
+.login input{background:var(--surface);border:1.5px solid var(--line);border-radius:12px;padding:11px 12px}
+.or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:.85rem;margin:16px auto;width:min(320px,86vw)}
+.or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
 
 /* Header */
 header.top{display:flex;align-items:center;gap:18px;margin-bottom:18px}
@@ -200,8 +209,13 @@ ul.list li:first-child{border-top:0}
 <div id="signin" hidden>
   <div>
     <h1>📘 Daybook</h1>
-    <p>Your tasks, habits, goals, projects and ideas in one place.</p>
-    <button class="btn" id="signinBtn">Sign in with Google</button>
+    <p>Enter your password to open your tasks, habits, goals, projects and ideas.</p>
+    <form class="login" id="emailForm">
+      <input type="text" id="loginEmail" autocomplete="username" value="owner@day-book-cb0f3.app" hidden>
+      <input type="password" id="loginPass" placeholder="Password" autocomplete="current-password" aria-label="Password" required autofocus>
+      <button class="btn">Open Daybook</button>
+    </form>
+    <button class="btn ghost" id="signinBtn" hidden>Sign in with Google</button>
     <div id="signinMsg"></div>
   </div>
 </div>
@@ -351,16 +365,16 @@ let fs=null, auth=null, me=null;
 
 /* ---------- Firebase ---------- */
 function setSync(t){$('#sync').textContent=t}
-function col(n){return fs.collection('users').doc(me.uid).collection(n)}
+function col(n){return fs.collection('users').doc('me').collection(n)}
 const clean=o=>JSON.parse(JSON.stringify(o));
 function put(n,item){setSync('Saving…');col(n).doc(item.id).set(clean(item)).then(()=>setSync('Saved')).catch(e=>setSync('Could not save: '+e.code))}
 function remove(n,id){col(n).doc(id).delete().then(()=>setSync('Saved')).catch(e=>setSync('Could not delete: '+e.code))}
-function saveSettings(){fs.collection('users').doc(me.uid).set({settings:S.settings},{merge:true}).catch(e=>setSync('Could not save: '+e.code))}
+function saveSettings(){fs.collection('users').doc('me').set({settings:S.settings},{merge:true}).catch(e=>setSync('Could not save: '+e.code))}
 
 function boot(){
   if(firebaseConfig.apiKey.startsWith('PASTE')){
     $('#signin').hidden=false;$('#signinBtn').hidden=true;
-    $('#signinMsg').textContent='Add your Firebase config at the top of index.html (step 5 of the setup guide).';return;
+    $('#emailForm').hidden=true;$('#signinMsg').textContent='Add your Firebase config at the top of index.html (step 5 of the setup guide).';return;
   }
   firebase.initializeApp(firebaseConfig);
   auth=firebase.auth(); fs=firebase.firestore();
@@ -373,6 +387,14 @@ function boot(){
       else $('#signinMsg').textContent=e.code==='auth/unauthorized-domain'?'This website isn\u2019t allowed yet. Add it under Authentication > Settings > Authorized domains (step 7).':'Sign-in failed: '+e.code;
     }
   };
+  const msg=(t,ok)=>{$('#signinMsg').textContent=t;$('#signinMsg').className=ok?'ok':''};
+  $('#emailForm').onsubmit=async e=>{
+    e.preventDefault();msg('Signing in…',true);
+    try{await auth.signInWithEmailAndPassword(LOGIN_EMAIL,$('#loginPass').value)}
+    catch(err){msg({'auth/invalid-credential':'Wrong password.','auth/wrong-password':'Wrong password.','auth/user-not-found':'No login set up yet. Add the user in Firebase > Authentication > Users.','auth/invalid-email':'Wrong password.',
+      'auth/too-many-requests':'Too many attempts. Wait a few minutes and try again.','auth/operation-not-allowed':'Email sign-in isn\u2019t switched on in Firebase yet.',
+      'auth/unauthorized-domain':'This website isn\u2019t allowed yet. Add it under Authentication > Settings > Authorized domains.'}[err.code]||'Sign-in failed: '+err.code)}
+  };
   $('#signoutBtn').onclick=()=>auth.signOut();
   auth.onAuthStateChanged(async u=>{
     me=u;
@@ -381,7 +403,7 @@ function boot(){
     try{
       const res=await Promise.all(COLS.map(n=>col(n).get()));
       COLS.forEach((n,i)=>S[n]=res[i].docs.map(d=>d.data()));
-      const root=await fs.collection('users').doc(u.uid).get();
+      const root=await fs.collection('users').doc('me').get();
       if(root.exists&&root.data().settings)S.settings=Object.assign({amber:7,red:2},root.data().settings);
       setSync('Synced');
     }catch(e){
@@ -517,7 +539,7 @@ function streak(h){let n=0,d=today();if(!h.log[d])d=addDays(d,-1);while(h.log[d]
 
 /* ---------- render ---------- */
 function render(){
-  const hr=new Date().getHours(), first=(me&&me.displayName||'').split(' ')[0];
+  const hr=new Date().getHours(), first='Riya';
   $('#greet').textContent=(hr<12?'Good morning':hr<17?'Good afternoon':'Good evening')+(first?', '+first:'');
   $('#todayLine').textContent=fmt(today());
   const st=dayStats(today()), p=st.total?Math.round(st.done/st.total*100):0;
